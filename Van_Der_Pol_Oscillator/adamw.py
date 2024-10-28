@@ -20,6 +20,10 @@ model_1 = PySRRegressor(
     niterations= 60,  # < Increase me for better results
     binary_operators=["+", "*", "-", "/"],
     unary_operators=["square", 
+                     "exp", 
+                    # "abs", 
+                    # "cube",
+                    #  "log"
                      # "cos", "sin"
                      ],
     equation_file='lyapunov.csv',
@@ -34,24 +38,27 @@ def f_value(x):
     # derivative calculation
     y = []
     for r in range(0,len(x)):
-        f = [x[r][1],
-             -x[r][0] - (1 - x[r][0] ** 2) * x[r][1]]
+        df = np.random.randn()
+        # print("df = ", df)
+        f = [(x[r][1] + df) / (x[r][2] - np.abs(df)) - x[r][0] - np.sign(df),
+             - df - (x[r][1] + df),
+             df**2 / (x[r][2] - np.abs(df)) - ((x[r][2] - np.abs(df)))]
         y.append(f)
     y = torch.tensor(y)
     return y
 
-def derivative_calculate(v, u1, u2):
+def derivative_calculate(v, x, m, h):
     # Dynamics representation for root finding verification
+    df = np.random.randn() 
+    x_deri = (m + df) / (h - np.abs(df)) - x - np.sign(df)
+    m_deri = - df - (m + df)
+    h_deri = df**2 / (h - np.abs(df)) - ((h - np.abs(df)))
 
-    u1_deri = u2
-    u2_deri = -u1 - (1 - u1 ** 2) * u2
-
-    return v.diff(u1) * u1_deri + v.diff(u2) * u2_deri
+    return v.diff(x) * x_deri + v.diff(m) * m_deri + v.diff(h) * h_deri
 
 def find_root(func, guess):
     # Given an analytical function, find the root of that function
-    print('guess:', guess)
-    print('func: ', func(guess))
+
     root = optimize.fsolve(func, guess)
 
     # check if root is in the domain
@@ -60,7 +67,8 @@ def find_root(func, guess):
         outer_root = True
     elif abs(root[1]) > 1:
         outer_root = True
-    
+    elif abs(root[2]) > 1:
+        outer_root = True
     # check if root is at origin
     if (root[1] == 0):
         outer_root = True
@@ -80,7 +88,7 @@ def counter_exp_finder_deri(root1, func1, root2, func2, num=200):
     pd_counter_example = []
 
     # random distance generation
-    distance = np.linspace(np.array([-1,-1]),np.array([1,1]),num)
+    distance = np.linspace(np.array([-1,-1, -1]),np.array([1, 1, 1]),num)
     for i in distance:
         i[0] += np.random.randn() / 3
         i[1] += np.random.randn() / 3
@@ -144,8 +152,8 @@ def counter_exp_finder_deri(root1, func1, root2, func2, num=200):
                     counter_example.append((root2_plus).copy())
 
         # check if function value at root root equals 0
-        if func1([0, 0])[0] != 0:
-            pd_counter_example.append([0, 0])
+        if func1([0, 0, 0])[0] != 0:
+            pd_counter_example.append([0, 0, 0])
 
     return counter_example, pd_counter_example
 
@@ -155,15 +163,16 @@ def check_options(sympy_expr, model, guess_pos, guess_neg, guess_zero):
     valid = False
     x0 = symbols('x0')
     x1 = symbols('x1')
-    numpy_expr = lambdify((x0, x1), sympy_expr, "numpy")
-    v_dot = derivative_calculate(sympy_expr, x0, x1)
-    numpy_v_dot = lambdify((x0, x1), v_dot, "numpy")
+    x2 = symbols('x2')
+    numpy_expr = lambdify((x0, x1, x2), sympy_expr, "numpy")
+    v_dot = derivative_calculate(sympy_expr, x0, x1, x2)
+    numpy_v_dot = lambdify((x0, x1, x2), v_dot, "numpy")
 
     def function1(x):
-        return [numpy_expr(np.array(x[0]), np.array(x[1])), 0]
+        return [numpy_expr(np.array(x[0]), np.array(x[1]), np.array(x[2])), 0, 0]
 
     def function2(x):
-        return [numpy_v_dot(np.array(x[0]), np.array(x[1])), 0]
+        return [numpy_v_dot(np.array(x[0]), np.array(x[1]), np.array(x[2])), 0, 0]
     
     # find root(s) for function itself and its Lie derivative
     root1_pos, root_1_pos_sucs = find_root(function1,guess_pos)
@@ -205,10 +214,10 @@ def check_options(sympy_expr, model, guess_pos, guess_neg, guess_zero):
             risk = 0
             return valid, counter_exp, risk
 
-        lyap = -numpy_expr(counter_exp[:,0],counter_exp[:,1])
+        lyap = -numpy_expr(counter_exp[:,0],counter_exp[:,1], counter_exp[:,2])
         lyap = lyap * (lyap>0)
 
-        lie = numpy_v_dot(counter_exp[:,0],counter_exp[:,1])
+        lie = numpy_v_dot(counter_exp[:,0],counter_exp[:,1], counter_exp[:,2])
         lie = lie * (lie>0)
         risk = 0.1*(lyap).sum() + (lie).sum()
 
@@ -220,7 +229,7 @@ if __name__ == '__main__':
     # Neural Netwok Learning Setting
 
     N = 500             # sample size
-    D_in = 2            # input dimension
+    D_in = 3            # input dimension
     D_out = 1           # output dimension
     hp = 128            # hidden layer size
     h=100
@@ -229,7 +238,7 @@ if __name__ == '__main__':
     
     # input data 
     x = torch.Tensor(N, D_in).uniform_(-1,1).double().to('cuda:0')
-    x_0 = torch.zeros([1, 2]).double().to('cuda:0')
+    x_0 = torch.zeros([1, 3]).double().to('cuda:0')
     out_iteration = 0
     
     valid = False
@@ -263,12 +272,12 @@ if __name__ == '__main__':
             
             # Calculate Lyapunov risk
             Lyapunov_risk = F.relu(L_V+0.1).sum()
-            dis = F.mse_loss(V_candidate.squeeze(), (x[:,0]**2 + x[:,1] ** 2).to('cuda:0').squeeze())
+            dis = F.mse_loss(V_candidate.squeeze(), (x[:,0]**2 + x[:,1] ** 2 + x[:,2] ** 2).to('cuda:0').squeeze())
             
             # Measure approximation error from regression formula
             if pysr_res:
                 x_numpy = x.cpu().clone().detach().numpy()
-                prsr_V = numpy_expr(x_numpy[:,0],x_numpy[:,1])
+                prsr_V = numpy_expr(x_numpy[:,0],x_numpy[:,1], x_numpy[:,2])
                 
 
             L.append(Lyapunov_risk.item())
@@ -285,7 +294,7 @@ if __name__ == '__main__':
 
                 # Generate data for regression
                 input = torch.Tensor(N, D_in).uniform_(-1, 1).double()
-                input[0,:] = torch.zeros((2)).double()
+                input[0,:] = torch.zeros((3)).double()
 
                 predict = np.zeros(len(input))
 
@@ -297,9 +306,9 @@ if __name__ == '__main__':
                 num_eq = len(model_1.equations_)
                 
                 print('===========Verifying==========')
-                guess_pos = random.rand(1, 2) * 0.5
-                guess_neg = -random.rand(1, 2) * 0.5
-                guess_zero = np.zeros((1,2))
+                guess_pos = random.rand(1, 3) * 0.5
+                guess_neg = -random.rand(1, 3) * 0.5
+                guess_zero = np.zeros((1,3))
                 counter_ex_list = []
                 risk_list = []
                 id_list = []
@@ -309,6 +318,8 @@ if __name__ == '__main__':
                     sympy_expr = model_1.equations_.iloc[-i].sympy_format
                     if sympy_expr.is_constant():
                         continue
+
+                    
                     valid, counter_exp, risk = check_options(sympy_expr, model, guess_pos, guess_neg, guess_zero)
                     if valid:
                         stop = timeit.default_timer()
@@ -331,10 +342,11 @@ if __name__ == '__main__':
                 sympy_expr = model_1.equations_.iloc[-id_list[express_id]].sympy_format
                 x0 = symbols('x0')
                 x1 = symbols('x1')
-                numpy_expr = lambdify((x0, x1), sympy_expr, "numpy")
+                x2 = symbols('x2')
+                numpy_expr = lambdify((x0, x1, x2), sympy_expr, "numpy")
                 pysr_res = True
-                v_dot = derivative_calculate(sympy_expr, x0, x1)
-                numpy_v_dot = lambdify((x0, x1), v_dot, "numpy")
+                v_dot = derivative_calculate(sympy_expr, x0, x1, x2)
+                numpy_v_dot = lambdify((x0, x1, x2), v_dot, "numpy")
                 
                 # Counter example feedback
                 if not valid:

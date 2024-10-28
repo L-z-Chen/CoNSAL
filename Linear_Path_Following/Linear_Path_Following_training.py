@@ -182,13 +182,13 @@ def check_options(sympy_expr, model, guess_pos, guess_neg, guess_zero):
         return [logsumexp(numpy_v_dot(np.array(x[0]), np.array(x[1]))), 0]
 
     # find root(s) for function itself and its Lie derivative
-    root1_pos, root_1_pos_sucs = find_root(function1,guess_pos)
-    root1_neg, root_1_neg_sucs = find_root(function1,guess_neg)
-    root1_zero, root_1_zero_sucs = find_root(function1,guess_zero)
+    root1_pos, root_1_pos_sucs = find_root(function1, guess_pos)
+    root1_neg, root_1_neg_sucs = find_root(function1, guess_neg)
+    root1_zero, root_1_zero_sucs = find_root(function1, guess_zero)
     
-    root2_pos, root_2_pos_sucs = find_root(function2,guess_pos)
-    root2_neg, root_2_neg_sucs = find_root(function2,guess_neg)
-    root2_zero, root_2_zero_sucs = find_root(function2,guess_zero)
+    root2_pos, root_2_pos_sucs = find_root(function2, guess_pos)
+    root2_neg, root_2_neg_sucs = find_root(function2, guess_neg)
+    root2_zero, root_2_zero_sucs = find_root(function2, guess_zero)
     
     # ramdom sample checks around root for Lyapunov conditions
     counter_example_pos, pd_pos = counter_exp_finder_deri(root1_pos, function1, root2_pos, function2)
@@ -348,7 +348,7 @@ if __name__ == '__main__':
                     torch.save(model.state_dict(), 'nn_lyapunov.pt')
                     break
 
-                # find the formula with closest approximation to Neural Lyapunov Function
+                # Find the formula with closest approximation to Neural Lyapunov Function
                 express_id = np.argmin(np.array(risk_list))
                 sympy_expr = model_1.equations_.iloc[-id_list[express_id]].sympy_format
                 x0 = symbols('x0')
